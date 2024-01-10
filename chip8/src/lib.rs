@@ -1,6 +1,5 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+use rand::random;
+
 const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
 const MEMORY_SIZE: usize = 4096;
@@ -82,6 +81,7 @@ impl Chip8 {
     pub fn step(&mut self) {
         let byte1 = self.memory[self.program_counter as usize];
         let byte2 = self.memory[(self.program_counter as usize) + 1];
+        self.program_counter += 2;
 
         let instruction = (
             byte1 >> 4,
@@ -89,18 +89,109 @@ impl Chip8 {
             byte2 >> 4,
             byte2 & 0xf
         );
-        self.program_counter += 2;
 
         match instruction {
-            (0x0, 0x0, 0xE, 0x0) => self.clear_screen(),
-            (0x1, x, y, z) => self.jump(x, y, z), // Unconditional jump
-            (0x2, x, y, z) => { // Enter a subroutine
+            (0x0, 0x0, 0xE, 0x0) => { 
+                self.clear_screen();
+            },
+            (0x1, nib1, nib2, nib3) => { // Unconditional jump
+                self.program_counter = Self::combine_nibbles(nib1, nib2, nib3);
+            }, 
+            (0x2, nib1, nib2, nib3) => { // Enter a subroutine
                 self.stack.push(self.program_counter);
-                self.jump(x, y, z);
-            }
+                self.program_counter = Self::combine_nibbles(nib1, nib2, nib3);
+            },
             (0x0, 0x0, 0xE, 0xE) => { // Return from subroutine
                 self.program_counter = self.stack.pop().expect("Attempted to return from subroutine on empty stack.");
             }, 
+            (0x3, reg, _, _) => { // Skip inst. if reg == byte2 
+                if self.registers[reg as usize] == byte2 {
+                    self.program_counter += 2;
+                }
+            },
+            (0x4, reg, _, _) => { // Skip isnt. if reg != byte2 
+                if self.registers[reg as usize] != byte2 {
+                    self.program_counter += 2;
+                }
+            },
+            (0x5, reg1, reg2, _) => { // Skip inst. if reg1 == reg2
+                if self.registers[reg1 as usize] == self.registers[reg2 as usize] {
+                    self.program_counter += 2;
+                }
+            },
+            (0x9, reg1, reg2, _) => { // Skip inst. if reg1 != reg2 
+                if self.registers[reg1 as usize] != self.registers[reg2 as usize] {
+                    self.program_counter += 2;
+                }
+            },
+            (0x6, reg, _, _) => { // Set reg to byte2
+                self.registers[reg as usize] = byte2;
+            },
+            (0x7, reg, _, _) => { // Add byte2 to reg 
+                self.registers[reg as usize] += byte2;
+            },
+            (0x8, reg1, reg2, 0x0) => { // Set reg1 to reg2 
+                self.registers[reg1 as usize] = self.registers[reg2 as usize];
+            },
+            (0x8, reg1, reg2, 0x1) => { // reg1 = reg1 | reg2
+                self.registers[reg1 as usize] |= self.registers[reg2 as usize];
+            },
+            (0x8, reg1, reg2, 0x2) => { // reg1 = reg1 & reg2
+                self.registers[reg1 as usize] &= self.registers[reg2 as usize];
+            },
+            (0x8, reg1, reg2, 0x3) => { // reg1 = reg1 ^ reg2
+                self.registers[reg1 as usize] ^= self.registers[reg2 as usize];
+            },
+            (0x8, reg1, reg2, 0x4) => { // reg1 = reg1 + reg2
+                let val1 = self.registers[reg1 as usize];
+                let val2 = self.registers[reg2 as usize];
+                self.registers[reg1 as usize] = val1 + val2;
+                match val1.checked_add(val2) {
+                    Some(_) => self.registers[0xf] = 0,
+                    None =>  self.registers[0xf] = 1
+                }
+            },
+            (0x8, reg1, reg2, 0x5) => { // reg1 = reg1 - reg2, VF = reg1 > reg2
+                let val1 = self.registers[reg1 as usize];
+                let val2 = self.registers[reg2 as usize];
+                if val1 > val2 {
+                    self.registers[0xf] = 1;
+                } else {
+                    self.registers[0xf] = 0;
+                }
+                self.registers[reg1 as usize] = val1 - val2;
+            },
+            (0x8, reg1, _, 0x6) => { // reg1 = reg1 >> 1, VF = reg1 & 1
+                // TODO: Add option to set reg1 to reg2
+                self.registers[0xf] = self.registers[reg1 as usize] & 1;
+                self.registers[reg1 as usize] >>= 1;
+            },
+            (0x8, reg1, reg2, 0x7) => { // reg1 = reg2 - reg1, VF = reg2 > reg1
+                let val1 = self.registers[reg1 as usize];
+                let val2 = self.registers[reg2 as usize];
+                if val2 > val1 {
+                    self.registers[0xf] = 1;
+                } else {
+                    self.registers[0xf] = 0;
+                }
+                self.registers[reg1 as usize] = val2 - val1;
+            },
+            (0x8, reg1, _, 0xe) => { // reg1 = reg1 << 1, VF = reg1 & (1 << 8)
+                // TODO: Add option to set reg1 to reg2
+                self.registers[0xf] = self.registers[reg1 as usize] & (1 << 8);
+                self.registers[reg1 as usize] <<= 1;
+            },
+            (0xa, nib1, nib2, nib3) => { // IndexRegister = NNN
+                self.index_register = Self::combine_nibbles(nib1, nib2, nib3);
+            },
+            (0xb, nib1, nib2, nib3) => { // Jump to NNN + V0
+                // TODO: Add option to allow BXNN (maybe)
+                self.program_counter = Self::combine_nibbles(nib1, nib2, nib3) + self.registers[0] as u16;
+            },
+            (0xc, reg, _, _) => { // reg = rand & byte2
+                let rand_value: u8 = rand::random::<u8>();
+                self.registers[reg as usize] = rand_value & byte2;
+            }
             (0x0, _, _, _) => {}, // Do nothing, for compatibility.
             (_, _, _, _) => panic!("ERROR: Instruction {:?} not implemented.", instruction),
         }
@@ -113,12 +204,13 @@ impl Chip8 {
         }
     }
 
-    /// Jumps to the designated program counter.
-    fn jump(&mut self, nib1: u8, nib2: u8, nib3: u8) {
-        self.program_counter = 0;
-        self.program_counter |= (nib1 as u16) << 8;
-        self.program_counter |= (nib2 as u16) << 4;
-        self.program_counter |= nib3 as u16;
+    /// Combines 3 nibbles into one u16, top 4 bytes empty.
+    fn combine_nibbles(nib1: u8, nib2: u8, nib3: u8) -> u16 {
+        let mut res: u16 = 0;
+        res |= (nib1 as u16) << 8;
+        res |= (nib2 as u16) << 4;
+        res |= nib3 as u16;
+        res
     }
 }
 
@@ -172,14 +264,5 @@ mod tests {
         emu.display = [1; SCREEN_HEIGHT * SCREEN_WIDTH];
         emu.clear_screen();
         assert_eq!(emu.display, [0; SCREEN_HEIGHT * SCREEN_WIDTH]);
-    }
-
-    #[test]
-    fn pc_jump() {
-        let mut emu = Chip8::new();
-        emu.jump(0x2, 0x0, 0x0);
-        assert_eq!(emu.program_counter, 0x200);
-        emu.jump(0xf, 0xf, 0xf);
-        assert_eq!(emu.program_counter, 0xfff);
     }
 }
