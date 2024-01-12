@@ -1,5 +1,3 @@
-use rand::random;
-
 const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
 const MEMORY_SIZE: usize = 4096;
@@ -198,7 +196,28 @@ impl Chip8 {
                 self.registers[reg as usize] = rand_value & byte2;
             },
             (0xd, reg1, reg2, num_bytes) => { // Changes the display
-                todo!("Draw the sprites");
+                let x_pos: u8 = self.registers[reg1 as usize] % (SCREEN_WIDTH as u8);
+                let y_pos: u8 = self.registers[reg2 as usize] % (SCREEN_HEIGHT as u8);
+                self.registers[0xf] = 0;
+                
+                for row in 0..=num_bytes {
+                    if (row as usize) >= SCREEN_HEIGHT {
+                        break;
+                    }
+                    let mut curr_row = self.memory[(self.index_register + (row as u16)) as usize];
+                    for col in 0..8 {
+                        if col >= SCREEN_WIDTH {
+                            break;
+                        }
+                        let curr_pixel = curr_row & 1;
+                        let display_position: usize = ((y_pos as usize) + col) * SCREEN_WIDTH + ((x_pos as usize) + (row as usize));
+                        if self.display[display_position] == 1 {
+                            self.registers[0xf] = 1;
+                        }
+                        self.display[display_position] ^= curr_pixel;
+                        curr_row >>= 1;
+                    }
+                }
             }, 
             (0xe, reg, 0x9, 0xe) => { // Skip if key in reg is pressed 
                 if self.key_pressed && (self.keyboard == self.registers[reg as usize]) {
@@ -220,16 +239,16 @@ impl Chip8 {
                 self.sound_timer = self.registers[reg as usize];
             },
             (0xf, reg, 0x1, 0xe) => {
-                self.index_register += self.registers[reg as usize];
+                self.index_register += self.registers[reg as usize] as u16;
             },
-            (0xf, reg, 0x0, 0xa) => {
+            (0xf, reg, 0x0, 0xa) => { // 
                 if !self.key_pressed { // loop until key is pressed
                     self.program_counter -= 2;
                 }
                 self.registers[reg as usize] = self.keyboard;
                 self.key_pressed = false; // Maybe leave this to emu?
             },
-            (0xf, reg, 0x2, 0x9) => { // Sets I reg to the beginning of the font
+            (0xf, _, 0x2, 0x9) => { // Sets I reg to the beginning of the font
                 self.index_register = 0x50;
             },
             (0xf, reg, 0x3, 0x3) => { // Stores the digits of num in reg at the address in I
