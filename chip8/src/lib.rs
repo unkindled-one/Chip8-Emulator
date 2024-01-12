@@ -20,12 +20,15 @@ pub struct Chip8 {
     sound_timer: u8,
     /// Stores the information of each pixel on the screen.
     pub display: [u8; SCREEN_WIDTH * SCREEN_HEIGHT],
+    /// Stores the information on the keys that is being pressed.
+    pub keyboard: u8,
+    /// Stores whether a key is currently pressed.
+    key_pressed: bool,
     /// Program stack, used for recursion and generally has a max length of 16 
     stack: Vec<u16> 
 }
 
 impl Chip8 {
-    // TODO: put font in memory when interpreter is started
     /// Load the font into memory starting at byte 0x50 (by convention).
     fn initialize_font(memory: &mut [u8; MEMORY_SIZE]) {
         // Source: https://tobiasvl.github.io/blog/write-a-chip-8-emulator/#display
@@ -63,6 +66,8 @@ impl Chip8 {
             delay_timer: 60, // 60hz 
             sound_timer: 60,
             display: [0; SCREEN_WIDTH * SCREEN_HEIGHT],
+            keyboard: 0,
+            key_pressed: false,
             stack: Vec::new() // Unbounded stack for convenience 
         }
     }
@@ -191,17 +196,87 @@ impl Chip8 {
             (0xc, reg, _, _) => { // reg = rand & byte2
                 let rand_value: u8 = rand::random::<u8>();
                 self.registers[reg as usize] = rand_value & byte2;
+            },
+            (0xd, reg1, reg2, num_bytes) => { // Changes the display
+                todo!("Draw the sprites");
+            }, 
+            (0xe, reg, 0x9, 0xe) => { // Skip if key in reg is pressed 
+                if self.key_pressed && (self.keyboard == self.registers[reg as usize]) {
+                    self.program_counter += 2;
+                }
+            }, 
+            (0xe, reg, 0xa, 0x1) => { // Skip is key in reg is not pressed
+                if !(self.key_pressed && self.keyboard == self.registers[reg as usize]) {
+                    self.program_counter += 2;
+                }
+            },
+            (0xf, reg, 0x0, 0x7) => { // Sets the reg to delay timer
+                self.registers[reg as usize] = self.delay_timer;
+            },
+            (0xf, reg, 0x1, 0x5) => {
+                self.delay_timer = self.registers[reg as usize];
+            },
+            (0xf, reg, 0x1, 0x8) => {
+                self.sound_timer = self.registers[reg as usize];
+            },
+            (0xf, reg, 0x1, 0xe) => {
+                self.index_register += self.registers[reg as usize];
+            },
+            (0xf, reg, 0x0, 0xa) => {
+                if !self.key_pressed { // loop until key is pressed
+                    self.program_counter -= 2;
+                }
+                self.registers[reg as usize] = self.keyboard;
+                self.key_pressed = false; // Maybe leave this to emu?
+            },
+            (0xf, reg, 0x2, 0x9) => { // Sets I reg to the beginning of the font
+                self.index_register = 0x50;
+            },
+            (0xf, reg, 0x3, 0x3) => { // Stores the digits of num in reg at the address in I
+                let mut num = self.registers[reg as usize];
+                for i in 0..3 {
+                    self.memory[(self.index_register as usize) + i] = num % 10;
+                    num /= 10;
+                }
+            },
+            (0xf, reg, 0x5, 0x5) => { // Load into memory from reg at address I
+                // TODO: Add option for older behavior potentially.
+                for i in 0..=reg {
+                    self.memory[(self.index_register + (i as u16)) as usize] = self.registers[reg as usize];
+                }
+            },
+            (0xf, reg, 0x6, 0x5) => { // Load into reg from memory at address I
+                for i in 0..=reg {
+                    self.registers[reg as usize] = self.memory[(self.index_register + (i as u16)) as usize];
+                }
             }
+
             (0x0, _, _, _) => {}, // Do nothing, for compatibility.
             (_, _, _, _) => panic!("ERROR: Instruction {:?} not implemented.", instruction),
         }
     }
 
-    /// Sets all the display pixels to 0.
+    /// Sets all the display pixels to 0. 
     fn clear_screen(&mut self) {
         for i in 0..self.display.len() {
             self.display[i] = 0;
         }
+    }
+
+    /// A number 0-15 that marks the position on the control grid. Allows the frontend to choose the key mappings.
+    /// Only one key can be pressed at any time.
+    pub fn press_key(&mut self, key_num: u8) {
+        if key_num > 0xf { // Invalid key entered, ignore
+            return; 
+        }
+        self.keyboard = 0;
+        self.keyboard |= key_num;
+        self.key_pressed = true;
+    }
+
+    /// Unpresses the key that was currently pressed.
+    pub fn unpress_key(&mut self) {
+        self.key_pressed = false;
     }
 
     /// Combines 3 nibbles into one u16, top 4 bytes empty.
