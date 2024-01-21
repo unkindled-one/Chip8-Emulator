@@ -9,7 +9,9 @@ pub struct Chip8 {
     memory: [u8; MEMORY_SIZE],
     /// The general purpose registers
     registers: [u8; 16],
-
+    /// Whether the display needs to be redrawn.
+    needs_redraw: bool,
+    /// Holds index for program.
     index_register: u16,
     /// Decremented 60 times/second, used for timing.
     delay_timer: u8,
@@ -57,6 +59,7 @@ impl Chip8 {
             program_counter: 0x200, // start of the program
             memory,
             registers: [0; 16],
+            needs_redraw: false,
             index_register: 0,
             delay_timer: 60, // 60hz 
             sound_timer: 60,
@@ -97,6 +100,7 @@ impl Chip8 {
         match instruction {
             (0x0, 0x0, 0xE, 0x0) => { 
                 self.clear_screen();
+                self.needs_redraw = true;
             },
             (0x1, nib1, nib2, nib3) => { // Unconditional jump
                 self.program_counter = Self::combine_nibbles(nib1, nib2, nib3);
@@ -202,6 +206,7 @@ impl Chip8 {
                 self.registers[reg as usize] = rand_value & byte2;
             },
             (0xd, reg1, reg2, num_bytes) => { // Changes the display
+                self.needs_redraw = true;
                 let x_pos: u8 = self.registers[reg1 as usize] % (SCREEN_WIDTH as u8);
                 let y_pos: u8 = self.registers[reg2 as usize] % (SCREEN_HEIGHT as u8);
                 self.registers[0xf] = 0;
@@ -318,6 +323,11 @@ impl Chip8 {
             return;
         }
         self.keyboard[key_num as usize] = false;
+    }
+
+    /// Sets the needs_redraw flag to false.
+    pub fn set_redrawn(&mut self) {
+        self.needs_redraw = false;
     }
 
     /// Combines 3 nibbles into one u16, top 4 bytes empty.
