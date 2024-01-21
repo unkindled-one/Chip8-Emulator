@@ -132,7 +132,12 @@ impl Chip8 {
                 self.registers[reg as usize] = byte2;
             },
             (0x7, reg, _, _) => { // Add byte2 to reg 
-                self.registers[reg as usize] += byte2;
+                let val1 = self.registers[reg as usize];
+                match val1.checked_add(byte2) {
+                    Some(_) => self.registers[0xf] = 0,
+                    None => self.registers[0xf] = 1
+                }
+                self.registers[reg as usize] = val1.wrapping_add(byte2);
             },
             (0x8, reg1, reg2, 0x0) => { // Set reg1 to reg2 
                 self.registers[reg1 as usize] = self.registers[reg2 as usize];
@@ -149,11 +154,11 @@ impl Chip8 {
             (0x8, reg1, reg2, 0x4) => { // reg1 = reg1 + reg2
                 let val1 = self.registers[reg1 as usize];
                 let val2 = self.registers[reg2 as usize];
-                self.registers[reg1 as usize] = val1 + val2;
                 match val1.checked_add(val2) {
                     Some(_) => self.registers[0xf] = 0,
-                    None =>  self.registers[0xf] = 1
+                    None => self.registers[0xf] = 1
                 }
+                self.registers[reg1 as usize] = val1.wrapping_add(val2);
             },
             (0x8, reg1, reg2, 0x5) => { // reg1 = reg1 - reg2, VF = reg1 > reg2
                 let val1 = self.registers[reg1 as usize];
@@ -163,7 +168,7 @@ impl Chip8 {
                 } else {
                     self.registers[0xf] = 0;
                 }
-                self.registers[reg1 as usize] = val1 - val2;
+                self.registers[reg1 as usize] = val1.wrapping_sub(val2);
             },
             (0x8, reg1, _, 0x6) => { // reg1 = reg1 >> 1, VF = reg1 & 1
                 // TODO: Add option to set reg1 to reg2
@@ -205,18 +210,18 @@ impl Chip8 {
                     if (row as usize) >= SCREEN_HEIGHT {
                         break;
                     }
-                    let mut curr_row = self.memory[(self.index_register + (row as u16)) as usize];
                     for col in 0..8 {
                         if col >= SCREEN_WIDTH {
                             break;
                         }
-                        let curr_pixel = curr_row & 1;
                         let display_position: usize = ((y_pos as usize) + col) * SCREEN_WIDTH + ((x_pos as usize) + (row as usize));
+                        if display_position > self.display.len() {
+                            break;
+                        }
                         if self.display[display_position] {
                             self.registers[0xf] = 1;
                         }
                         self.display[display_position] = !self.display[display_position];
-                        curr_row >>= 1;
                     }
                 }
             }, 
@@ -288,7 +293,7 @@ impl Chip8 {
             self.sound_timer -= 1;
         }
         if self.delay_timer > 0 {
-            self.sound_timer -= 1;
+            self.delay_timer -= 1;
         }
     }
 

@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 chip8 = { path = "../chip8" }
+softbuffer = "0.4.1"
+winit = "0.29.10"
