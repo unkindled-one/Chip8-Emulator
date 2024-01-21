@@ -2,7 +2,6 @@ const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
 const MEMORY_SIZE: usize = 4096;
 
-
 pub struct Chip8 {
     // Can loop in here or in emulator
     program_counter: u16,
@@ -19,9 +18,7 @@ pub struct Chip8 {
     /// Stores the information of each pixel on the screen.
     pub display: [u8; SCREEN_WIDTH * SCREEN_HEIGHT],
     /// Stores the information on the keys that is being pressed.
-    pub keyboard: u8,
-    /// Stores whether a key is currently pressed.
-    key_pressed: bool,
+    pub keyboard: [bool; 16],
     /// Program stack, used for recursion and generally has a max length of 16 
     stack: Vec<u16> 
 }
@@ -64,8 +61,7 @@ impl Chip8 {
             delay_timer: 60, // 60hz 
             sound_timer: 60,
             display: [0; SCREEN_WIDTH * SCREEN_HEIGHT],
-            keyboard: 0,
-            key_pressed: false,
+            keyboard: [false; 16],
             stack: Vec::new() // Unbounded stack for convenience 
         }
     }
@@ -220,12 +216,12 @@ impl Chip8 {
                 }
             }, 
             (0xe, reg, 0x9, 0xe) => { // Skip if key in reg is pressed 
-                if self.key_pressed && (self.keyboard == self.registers[reg as usize]) {
+                if self.keyboard[self.registers[reg as usize] as usize] {
                     self.program_counter += 2;
                 }
             }, 
             (0xe, reg, 0xa, 0x1) => { // Skip is key in reg is not pressed
-                if !(self.key_pressed && self.keyboard == self.registers[reg as usize]) {
+                if !self.keyboard[self.registers[reg as usize] as usize] {
                     self.program_counter += 2;
                 }
             },
@@ -242,12 +238,17 @@ impl Chip8 {
                 self.index_register += self.registers[reg as usize] as u16;
             },
             (0xf, reg, 0x0, 0xa) => { // 
-                if !self.key_pressed { // loop until key is pressed
+                let mut any_pressed = false;
+                for (i, key) in self.keyboard.iter().enumerate() {
+                    if *key {
+                        self.registers[reg as usize] = i as u8;
+                        any_pressed = true;
+                    }
+                }
+                if !any_pressed { // loop until key is pressed
                     self.program_counter -= 2;
                 }
-                self.registers[reg as usize] = self.keyboard;
-                self.key_pressed = false; // Maybe leave this to emu?
-            },
+           },
             (0xf, _, 0x2, 0x9) => { // Sets I reg to the beginning of the font
                 self.index_register = 0x50;
             },
@@ -271,7 +272,18 @@ impl Chip8 {
             }
 
             (0x0, _, _, _) => {}, // Do nothing, for compatibility.
-            (_, _, _, _) => panic!("ERROR: Instruction {:?} not implemented.", instruction),
+            (_, _, _, _) => unimplemented!("ERROR: Instruction {:?} not implemented.", instruction),
+        }
+    }
+
+    /// Decrements both the delay and the sound timers. Does not reset after they reach 0, that is
+    /// the responsibility of the program. 
+    pub fn tick_timers(&mut self) {
+        if self.sound_timer > 0 {
+            self.sound_timer -= 1;
+        }
+        if self.delay_timer > 0 {
+            self.sound_timer -= 1;
         }
     }
 
@@ -283,19 +295,19 @@ impl Chip8 {
     }
 
     /// A number 0-15 that marks the position on the control grid. Allows the frontend to choose the key mappings.
-    /// Only one key can be pressed at any time.
     pub fn press_key(&mut self, key_num: u8) {
         if key_num > 0xf { // Invalid key entered, ignore
             return; 
         }
-        self.keyboard = 0;
-        self.keyboard |= key_num;
-        self.key_pressed = true;
+        self.keyboard[key_num as usize] = true;
     }
 
-    /// Unpresses the key that was currently pressed.
-    pub fn unpress_key(&mut self) {
-        self.key_pressed = false;
+    /// Unpresses the specified key.
+    pub fn unpress_key(&mut self, key_num: u8) {
+        if key_num > 0xf {
+            return;
+        }
+        self.keyboard[key_num as usize] = false;
     }
 
     /// Combines 3 nibbles into one u16, top 4 bytes empty.
@@ -358,5 +370,20 @@ mod tests {
         emu.display = [1; SCREEN_HEIGHT * SCREEN_WIDTH];
         emu.clear_screen();
         assert_eq!(emu.display, [0; SCREEN_HEIGHT * SCREEN_WIDTH]);
+    }
+
+    #[test]
+    fn draw_sprite() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn load_from_memory() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn load_to_memory() {
+        unimplemented!();
     }
 }
