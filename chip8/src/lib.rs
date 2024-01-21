@@ -16,7 +16,7 @@ pub struct Chip8 {
     /// Plays a tone as long as the value is not zero, decremented 60 times/second.
     sound_timer: u8,
     /// Stores the information of each pixel on the screen.
-    display: [u8; SCREEN_WIDTH * SCREEN_HEIGHT],
+    display: [bool; SCREEN_WIDTH * SCREEN_HEIGHT],
     /// Stores the information on the keys that is being pressed.
     keyboard: [bool; 16],
     /// Program stack, used for recursion and generally has a max length of 16 
@@ -60,7 +60,7 @@ impl Chip8 {
             index_register: 0,
             delay_timer: 60, // 60hz 
             sound_timer: 60,
-            display: [0; SCREEN_WIDTH * SCREEN_HEIGHT],
+            display: [false; SCREEN_WIDTH * SCREEN_HEIGHT],
             keyboard: [false; 16],
             stack: Vec::new() // Unbounded stack for convenience 
         }
@@ -77,7 +77,7 @@ impl Chip8 {
     }
 
     /// Returns the display.
-    pub fn get_display(&self) -> &[u8] {
+    pub fn get_display(&self) -> &[bool] {
         return &self.display;
     }
 
@@ -212,10 +212,10 @@ impl Chip8 {
                         }
                         let curr_pixel = curr_row & 1;
                         let display_position: usize = ((y_pos as usize) + col) * SCREEN_WIDTH + ((x_pos as usize) + (row as usize));
-                        if self.display[display_position] == 1 {
+                        if self.display[display_position] {
                             self.registers[0xf] = 1;
                         }
-                        self.display[display_position] ^= curr_pixel;
+                        self.display[display_position] = !self.display[display_position];
                         curr_row >>= 1;
                     }
                 }
@@ -295,7 +295,7 @@ impl Chip8 {
     /// Sets all the display pixels to 0. 
     fn clear_screen(&mut self) {
         for i in 0..self.display.len() {
-            self.display[i] = 0;
+            self.display[i] = false;
         }
     }
 
@@ -372,9 +372,9 @@ mod tests {
     #[test]
     fn clear_screen() {
         let mut emu = Chip8::new();
-        emu.display = [1; SCREEN_HEIGHT * SCREEN_WIDTH];
+        emu.display = [true; SCREEN_HEIGHT * SCREEN_WIDTH];
         emu.clear_screen();
-        assert_eq!(emu.display, [0; SCREEN_HEIGHT * SCREEN_WIDTH]);
+        assert_eq!(emu.display, [false; SCREEN_HEIGHT * SCREEN_WIDTH]);
     }
 
     #[test]
