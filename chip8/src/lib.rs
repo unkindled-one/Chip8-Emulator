@@ -16,9 +16,9 @@ pub struct Chip8 {
     /// Plays a tone as long as the value is not zero, decremented 60 times/second.
     sound_timer: u8,
     /// Stores the information of each pixel on the screen.
-    pub display: [u8; SCREEN_WIDTH * SCREEN_HEIGHT],
+    display: [u8; SCREEN_WIDTH * SCREEN_HEIGHT],
     /// Stores the information on the keys that is being pressed.
-    pub keyboard: [bool; 16],
+    keyboard: [bool; 16],
     /// Program stack, used for recursion and generally has a max length of 16 
     stack: Vec<u16> 
 }
@@ -74,6 +74,11 @@ impl Chip8 {
         for (i, byte) in data.iter().enumerate() {
             self.memory[0x200 + i] = *byte;
         }
+    }
+
+    /// Returns the display.
+    pub fn get_display(&self) -> &[u8] {
+        return &self.display;
     }
 
     /// Goes through the fetch, decode, execute cycle once.
@@ -177,7 +182,7 @@ impl Chip8 {
             },
             (0x8, reg1, _, 0xe) => { // reg1 = reg1 << 1, VF = reg1 & (1 << 8)
                 // TODO: Add option to set reg1 to reg2
-                self.registers[0xf] = self.registers[reg1 as usize] & (1 << 8);
+                self.registers[0xf] = self.registers[reg1 as usize] & (1 << 7);
                 self.registers[reg1 as usize] <<= 1;
             },
             (0xa, nib1, nib2, nib3) => { // IndexRegister = NNN
@@ -373,6 +378,15 @@ mod tests {
     }
 
     #[test]
+    fn jump() {
+        let mut emu = Chip8::new();
+        let data = vec![0x11, 0x11]; // Jump to 111
+        emu.load(&data);
+        emu.step();
+        assert_eq!(emu.program_counter, 0x111);
+    }
+
+    #[test]
     fn draw_sprite() {
         unimplemented!();
     }
@@ -386,4 +400,6 @@ mod tests {
     fn load_to_memory() {
         unimplemented!();
     }
+
+    // TODO: Write tests for the rest of the instructions
 }
