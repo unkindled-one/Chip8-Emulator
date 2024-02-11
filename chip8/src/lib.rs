@@ -1,3 +1,4 @@
+use std::io;
 const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
 const MEMORY_SIZE: usize = 4096;
@@ -84,6 +85,23 @@ impl Chip8 {
         return &self.display;
     }
 
+    /// Resets the execution
+    pub fn reset(&mut self) {
+        self.program_counter = 0x200;
+        self.display = [false; SCREEN_HEIGHT * SCREEN_WIDTH];
+        let mut memory = [0; MEMORY_SIZE];
+        Self::initialize_font(&mut memory);
+        self.memory = memory;
+        self.registers = [0; 16];
+        self.needs_redraw = false;
+        self.index_register = 0;
+        self.delay_timer = 60; // 60hz 
+        self.sound_timer = 60;
+        self.keyboard = [false; 16];
+        self.stack = Vec::new(); // Unbounded stack for convenience 
+        self.needs_redraw = true;
+    }
+
     /// Goes through the fetch, decode, execute cycle once.
     pub fn step(&mut self) {
         let byte1 = self.memory[self.program_counter as usize];
@@ -98,106 +116,108 @@ impl Chip8 {
         );
 
         match instruction {
-            (0x0, 0x0, 0xE, 0x0) => { 
+            (0x0, 0x0, 0xE, 0x0) => { // 00E0
                 self.clear_screen();
                 self.needs_redraw = true;
             },
-            (0x1, nib1, nib2, nib3) => { // Unconditional jump
+            (0x1, nib1, nib2, nib3) => { // 1NNN = Unconditional jump
                 self.program_counter = Self::combine_nibbles(nib1, nib2, nib3);
             }, 
-            (0x2, nib1, nib2, nib3) => { // Enter a subroutine
+            (0x2, nib1, nib2, nib3) => { // 2NNN = Enter a subroutine
                 self.stack.push(self.program_counter);
                 self.program_counter = Self::combine_nibbles(nib1, nib2, nib3);
             },
-            (0x0, 0x0, 0xE, 0xE) => { // Return from subroutine
+            (0x0, 0x0, 0xE, 0xE) => { // 00EE = Return from subroutine
                 self.program_counter = self.stack.pop().expect("Attempted to return from subroutine on empty stack.");
             }, 
-            (0x3, reg, _, _) => { // Skip inst. if reg == byte2 
+            (0x3, reg, _, _) => { // 3XNN = Skip inst. if reg == byte2 
                 if self.registers[reg as usize] == byte2 {
                     self.program_counter += 2;
                 }
             },
-            (0x4, reg, _, _) => { // Skip isnt. if reg != byte2 
+            (0x4, reg, _, _) => { // 4XNN = Skip isnt. if reg != byte2 
                 if self.registers[reg as usize] != byte2 {
                     self.program_counter += 2;
                 }
             },
-            (0x5, reg1, reg2, _) => { // Skip inst. if reg1 == reg2
+            (0x5, reg1, reg2, 0x0) => { // 5XY0 = Skip inst. if reg1 == reg2
                 if self.registers[reg1 as usize] == self.registers[reg2 as usize] {
                     self.program_counter += 2;
                 }
             },
-            (0x9, reg1, reg2, _) => { // Skip inst. if reg1 != reg2 
+            (0x9, reg1, reg2, 0x0) => { // 9XY0 = Skip inst. if reg1 != reg2 
                 if self.registers[reg1 as usize] != self.registers[reg2 as usize] {
                     self.program_counter += 2;
                 }
             },
-            (0x6, reg, _, _) => { // Set reg to byte2
+            (0x6, reg, _, _) => { // 6XNN = Set reg to byte2
                 self.registers[reg as usize] = byte2;
             },
-            (0x7, reg, _, _) => { // Add byte2 to reg 
-                let val1 = self.registers[reg as usize];
-                match val1.checked_add(byte2) {
-                    Some(_) => self.registers[0xf] = 0,
-                    None => self.registers[0xf] = 1
-                }
-                self.registers[reg as usize] = val1.wrapping_add(byte2);
+            (0x7, reg, _, _) => { // 7XNN = Add byte2 to reg 
+                self.registers[reg as usize] = self.registers[reg as usize].wrapping_add(byte2);
             },
-            (0x8, reg1, reg2, 0x0) => { // Set reg1 to reg2 
+            (0x8, reg1, reg2, 0x0) => { // 8XY0 = Set reg1 to reg2 
                 self.registers[reg1 as usize] = self.registers[reg2 as usize];
             },
-            (0x8, reg1, reg2, 0x1) => { // reg1 = reg1 | reg2
+            (0x8, reg1, reg2, 0x1) => { // 8XY1 = reg1 = reg1 | reg2
                 self.registers[reg1 as usize] |= self.registers[reg2 as usize];
             },
-            (0x8, reg1, reg2, 0x2) => { // reg1 = reg1 & reg2
+            (0x8, reg1, reg2, 0x2) => { // 8XY2 = reg1 = reg1 & reg2
                 self.registers[reg1 as usize] &= self.registers[reg2 as usize];
             },
-            (0x8, reg1, reg2, 0x3) => { // reg1 = reg1 ^ reg2
+            (0x8, reg1, reg2, 0x3) => { // 8XY3 = reg1 = reg1 ^ reg2
                 self.registers[reg1 as usize] ^= self.registers[reg2 as usize];
             },
-            (0x8, reg1, reg2, 0x4) => { // reg1 = reg1 + reg2
+            (0x8, reg1, reg2, 0x4) => { // 8XY4 = reg1 = reg1 + reg2
                 let val1 = self.registers[reg1 as usize];
                 let val2 = self.registers[reg2 as usize];
-                match val1.checked_add(val2) {
-                    Some(_) => self.registers[0xf] = 0,
-                    None => self.registers[0xf] = 1
-                }
-                self.registers[reg1 as usize] = val1.wrapping_add(val2);
-            },
-            (0x8, reg1, reg2, 0x5) => { // reg1 = reg1 - reg2, VF = reg1 > reg2
-                let val1 = self.registers[reg1 as usize];
-                let val2 = self.registers[reg2 as usize];
-                if val1 > val2 {
+                let (value, did_overflow) = val1.overflowing_add(val2);
+                if did_overflow {
                     self.registers[0xf] = 1;
                 } else {
                     self.registers[0xf] = 0;
                 }
-                self.registers[reg1 as usize] = val1.wrapping_sub(val2);
+                self.registers[reg1 as usize] = value;
             },
-            (0x8, reg1, _, 0x6) => { // reg1 = reg1 >> 1, VF = reg1 & 1
+            (0x8, reg1, reg2, 0x5) => { // 8XY5 = reg1 = reg1 - reg2, VF = reg1 > reg2
+                let val1 = self.registers[reg1 as usize];
+                let val2 = self.registers[reg2 as usize];
+                let (value, did_underflow) = val1.overflowing_sub(val2);
+
+                if did_underflow {
+                    self.registers[0xf] = 1;
+                } else {
+                    self.registers[0xf] = 0;
+                }
+                self.registers[reg1 as usize] = value;
+            },
+            (0x8, reg1, _, 0x6) => { // 8XY6 = reg1 = reg1 >> 1, VF = reg1 & 1
                 // TODO: Add option to set reg1 to reg2
                 self.registers[0xf] = self.registers[reg1 as usize] & 1;
                 self.registers[reg1 as usize] >>= 1;
             },
-            (0x8, reg1, reg2, 0x7) => { // reg1 = reg2 - reg1, VF = reg2 > reg1
+            (0x8, reg1, reg2, 0x7) => { // 8XY7 = reg1 = reg2 - reg1, VF = reg2 > reg1
+                 // 8XY5 = reg1 = reg1 - reg2, VF = reg1 > reg2
                 let val1 = self.registers[reg1 as usize];
                 let val2 = self.registers[reg2 as usize];
-                if val2 > val1 {
+                let (value, did_underflow) = val2.overflowing_sub(val1);
+
+                if did_underflow {
                     self.registers[0xf] = 1;
                 } else {
                     self.registers[0xf] = 0;
                 }
-                self.registers[reg1 as usize] = val2 - val1;
+                self.registers[reg1 as usize] = value;
             },
-            (0x8, reg1, _, 0xe) => { // reg1 = reg1 << 1, VF = reg1 & (1 << 8)
+            (0x8, reg1, _, 0xe) => { // 8XYE = reg1 = reg1 << 1, VF = reg1 & (1 << 8)
                 // TODO: Add option to set reg1 to reg2
                 self.registers[0xf] = self.registers[reg1 as usize] & (1 << 7);
                 self.registers[reg1 as usize] <<= 1;
             },
-            (0xa, nib1, nib2, nib3) => { // IndexRegister = NNN
+            (0xa, nib1, nib2, nib3) => { //  ANNN = IndexRegister = NNN
                 self.index_register = Self::combine_nibbles(nib1, nib2, nib3);
             },
-            (0xb, nib1, nib2, nib3) => { // Jump to NNN + V0
+            (0xb, nib1, nib2, nib3) => { // BNNN =  Jump to NNN + V0
                 // TODO: Add option to allow BXNN (maybe)
                 self.program_counter = Self::combine_nibbles(nib1, nib2, nib3) + self.registers[0] as u16;
             },
@@ -205,54 +225,58 @@ impl Chip8 {
                 let rand_value: u8 = rand::random::<u8>();
                 self.registers[reg as usize] = rand_value & byte2;
             },
-            (0xd, reg1, reg2, num_bytes) => { // Changes the display
+            (0xd, reg1, reg2, num_bytes) => { // DXYN = Changes the display
                 self.needs_redraw = true;
                 let x_pos: u8 = self.registers[reg1 as usize] % (SCREEN_WIDTH as u8);
                 let y_pos: u8 = self.registers[reg2 as usize] % (SCREEN_HEIGHT as u8);
-                self.registers[0xf] = 0;
-                
-                for row in 0..=num_bytes {
-                    if (row as usize) >= SCREEN_HEIGHT {
+                let mut flipped = false; // Check if any pixel was flipped
+
+                for row_num in 0..num_bytes {
+                    let pixels = self.memory[(self.index_register + row_num as u16) as usize];
+                    // stop writing when reaching bottom of screen
+                    if y_pos >= SCREEN_HEIGHT as u8 {
                         break;
                     }
-                    for col in 0..8 {
-                        if col >= SCREEN_WIDTH {
+                    for sprite_pos in 0..8 {
+                        // stop writing when reaching edge of screen
+                        if x_pos >= SCREEN_WIDTH as u8 {
                             break;
                         }
-                        let display_position: usize = ((y_pos as usize) + col) * SCREEN_WIDTH + ((x_pos as usize) + (row as usize));
-                        if display_position > self.display.len() {
-                            break;
-                        }
-                        if self.display[display_position] {
-                            self.registers[0xf] = 1;
-                        }
-                        self.display[display_position] = !self.display[display_position];
+                        let sprite_pixel = (pixels & (0b10000000 >> sprite_pos)) != 0;
+                        let index = ((x_pos + sprite_pos) as usize) + ((y_pos + row_num) as usize) * SCREEN_WIDTH;
+                        flipped |= self.display[index as usize] != sprite_pixel;
+                        self.display[index as usize] ^= sprite_pixel;
                     }
                 }
+                if flipped {
+                    self.registers[0xf] = 1;
+                } else {
+                    self.registers[0xf] = 0;
+                }
             }, 
-            (0xe, reg, 0x9, 0xe) => { // Skip if key in reg is pressed 
+            (0xe, reg, 0x9, 0xe) => { // EX9E = Skip if key in reg is pressed 
                 if self.keyboard[self.registers[reg as usize] as usize] {
                     self.program_counter += 2;
                 }
             }, 
-            (0xe, reg, 0xa, 0x1) => { // Skip is key in reg is not pressed
+            (0xe, reg, 0xa, 0x1) => { // EXA1 = Skip is key in reg is not pressed
                 if !self.keyboard[self.registers[reg as usize] as usize] {
                     self.program_counter += 2;
                 }
             },
-            (0xf, reg, 0x0, 0x7) => { // Sets the reg to delay timer
+            (0xf, reg, 0x0, 0x7) => { // FX07 = Sets the reg to delay timer
                 self.registers[reg as usize] = self.delay_timer;
             },
-            (0xf, reg, 0x1, 0x5) => {
+            (0xf, reg, 0x1, 0x5) => { // FX15
                 self.delay_timer = self.registers[reg as usize];
             },
-            (0xf, reg, 0x1, 0x8) => {
+            (0xf, reg, 0x1, 0x8) => { // FX18
                 self.sound_timer = self.registers[reg as usize];
             },
-            (0xf, reg, 0x1, 0xe) => {
-                self.index_register += self.registers[reg as usize] as u16;
+            (0xf, reg, 0x1, 0xe) => { // FX1E
+                self.index_register = self.index_register.wrapping_add(self.registers[reg as usize] as u16);
             },
-            (0xf, reg, 0x0, 0xa) => { // 
+            (0xf, reg, 0x0, 0xa) => { // FX0A
                 let mut any_pressed = false;
                 for (i, key) in self.keyboard.iter().enumerate() {
                     if *key {
@@ -264,25 +288,30 @@ impl Chip8 {
                     self.program_counter -= 2;
                 }
            },
-            (0xf, _, 0x2, 0x9) => { // Sets I reg to the beginning of the font
-                self.index_register = 0x50;
+            (0xf, reg, 0x2, 0x9) => { // Fx29 = Sets I reg to the font in vx
+                let x = reg as usize;
+                let c = self.registers[x] as u16;
+                self.index_register = c * 5;
             },
-            (0xf, reg, 0x3, 0x3) => { // Stores the digits of num in reg at the address in I
-                let mut num = self.registers[reg as usize];
-                for i in 0..3 {
-                    self.memory[(self.index_register as usize) + i] = num % 10;
-                    num /= 10;
-                }
+            (0xf, reg, 0x3, 0x3) => { // FX33 = Stores the digits of num in reg at the address in I
+                let num = self.registers[reg as usize];
+                self.memory[self.index_register as usize] = num / 100;
+                self.memory[(self.index_register + 1) as usize] = (num / 10) % 10;
+                self.memory[(self.index_register + 2) as usize] = num % 10;
             },
-            (0xf, reg, 0x5, 0x5) => { // Load into memory from reg at address I
+            (0xf, reg, 0x5, 0x5) => { // Fx55 = Load into memory from reg at address I
                 // TODO: Add option for older behavior potentially.
-                for i in 0..=reg {
-                    self.memory[(self.index_register + (i as u16)) as usize] = self.registers[reg as usize];
+                let i_reg_value = self.index_register as usize;
+                let x = reg as usize;
+                for i in 0..=x {
+                    self.memory[i_reg_value + i] = self.registers[i];
                 }
             },
-            (0xf, reg, 0x6, 0x5) => { // Load into reg from memory at address I
-                for i in 0..=reg {
-                    self.registers[reg as usize] = self.memory[(self.index_register + (i as u16)) as usize];
+            (0xf, reg, 0x6, 0x5) => { // FX65 = Load into reg from memory at address I
+                let i_reg_value = self.index_register as usize;
+                let x = reg as usize;
+                for i in 0..=x {
+                    self.registers[i] = self.memory[i_reg_value + i];
                 }
             }
 
@@ -326,18 +355,26 @@ impl Chip8 {
     }
 
     /// Sets the needs_redraw flag to false.
-    pub fn set_redrawn(&mut self) {
+    pub fn was_redrawn(&mut self) {
         self.needs_redraw = false;
     }
+    
+    pub fn needs_redraw(&self) -> bool {
+        return self.needs_redraw;
+    }
 
-    /// Combines 3 nibbles into one u16, top 4 bytes empty.
+    /// Combines 3 nibbles into one u16, top 4 bits empty.
     fn combine_nibbles(nib1: u8, nib2: u8, nib3: u8) -> u16 {
         let mut res: u16 = 0;
-        res |= (nib1 as u16) << 8;
-        res |= (nib2 as u16) << 4;
-        res |= nib3 as u16;
+        res |= ((nib1 & 0xf) as u16) << 8;
+        res |= ((nib2 & 0xf) as u16) << 4;
+        res |= (nib3 & 0xf) as u16;
         res
     }
+}
+
+fn pause() {
+    io::stdin().read_line(&mut String::new()).unwrap();
 }
 
 #[cfg(test)]
