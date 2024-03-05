@@ -172,47 +172,50 @@ impl Chip8 {
                 let val1 = self.registers[reg1 as usize];
                 let val2 = self.registers[reg2 as usize];
                 let (value, did_overflow) = val1.overflowing_add(val2);
+
+                self.registers[reg1 as usize] = value;
                 if did_overflow {
                     self.registers[0xf] = 1;
                 } else {
                     self.registers[0xf] = 0;
                 }
-                self.registers[reg1 as usize] = value;
             },
             (0x8, reg1, reg2, 0x5) => { // 8XY5 = reg1 = reg1 - reg2, VF = reg1 > reg2
                 let val1 = self.registers[reg1 as usize];
                 let val2 = self.registers[reg2 as usize];
                 let (value, did_underflow) = val1.overflowing_sub(val2);
+                self.registers[reg1 as usize] = value;
 
-                if did_underflow {
+                if !did_underflow {
                     self.registers[0xf] = 1;
                 } else {
                     self.registers[0xf] = 0;
                 }
-                self.registers[reg1 as usize] = value;
             },
             (0x8, reg1, _, 0x6) => { // 8XY6 = reg1 = reg1 >> 1, VF = reg1 & 1
                 // TODO: Add option to set reg1 to reg2
-                self.registers[0xf] = self.registers[reg1 as usize] & 1;
-                self.registers[reg1 as usize] >>= 1;
+                let value = self.registers[reg1 as usize];
+                self.registers[reg1 as usize] = value >> 1;
+                self.registers[0xf] = value & 1;
             },
             (0x8, reg1, reg2, 0x7) => { // 8XY7 = reg1 = reg2 - reg1, VF = reg2 > reg1
                  // 8XY5 = reg1 = reg1 - reg2, VF = reg1 > reg2
                 let val1 = self.registers[reg1 as usize];
                 let val2 = self.registers[reg2 as usize];
                 let (value, did_underflow) = val2.overflowing_sub(val1);
+                self.registers[reg1 as usize] = value;
 
-                if did_underflow {
+                if !did_underflow {
                     self.registers[0xf] = 1;
                 } else {
                     self.registers[0xf] = 0;
                 }
-                self.registers[reg1 as usize] = value;
             },
-            (0x8, reg1, _, 0xe) => { // 8XYE = reg1 = reg1 << 1, VF = reg1 & (1 << 8)
+            (0x8, reg1, _, 0xe) => { // 8XYE = reg1 = reg1 << 1, VF = reg1 & (1 << 7)
                 // TODO: Add option to set reg1 to reg2
-                self.registers[0xf] = self.registers[reg1 as usize] & (1 << 7);
-                self.registers[reg1 as usize] <<= 1;
+                let value = self.registers[reg1 as usize];
+                self.registers[reg1 as usize] = value << 1;
+                self.registers[0xf] = (value & (1 << 7)) >> 7;
             },
             (0xa, nib1, nib2, nib3) => { //  ANNN = IndexRegister = NNN
                 self.index_register = Self::combine_nibbles(nib1, nib2, nib3);
