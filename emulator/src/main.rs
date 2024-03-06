@@ -3,6 +3,8 @@ use softbuffer::Surface;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::{env, fs};
+use std::time::{Duration, Instant};
+use std::thread::sleep;
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent, ElementState};
 use winit::event_loop::{ControlFlow, EventLoop, EventLoopWindowTarget};
@@ -16,6 +18,7 @@ const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
 const SCALED_WIDTH: usize = 64 * SCALE;
 const SCALED_HEIGHT: usize = 32 * SCALE;
+const TICKS_PER_FRAME: u8 = 10;
 
 fn draw_screen(surface: &mut Surface<Rc<Window>, Rc<Window>>, emulator: &mut Chip8) {
     let mut buffer = surface.buffer_mut().unwrap();
@@ -144,6 +147,11 @@ fn main() {
         .unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
 
+    // Time controls for the frame rate
+    let mut last_frame_time = Instant::now();
+    let target_frame_rate = 60.0;
+    let time_per_frame: u64 = ((1.0 / target_frame_rate) * 1_000.0) as u64;
+
     event_loop
         .run(move |event, elwt| {
             match event {
@@ -152,6 +160,21 @@ fn main() {
                     event: WindowEvent::CloseRequested,
                 } => {
                     elwt.exit();
+                }
+                Event::AboutToWait => {
+                    for _ in 0..TICKS_PER_FRAME {
+                        emulator.step();
+                        emulator.tick_timers();
+                    }
+                    if emulator.needs_redraw() {
+                        window.request_redraw();
+                    }
+                    // Limits the frame rate to 60 fps, avoids running too fast 
+                    let time_elapsed: u64 = last_frame_time.elapsed().as_millis().try_into().unwrap_or_default();
+                    last_frame_time = Instant::now();
+                    if time_elapsed < time_per_frame {
+                        sleep(Duration::from_millis(time_per_frame - time_elapsed))
+                    }
                 }
                 Event::WindowEvent { window_id: _, event: WindowEvent::KeyboardInput { event, .. }} => {
                     let should_exit = handle_key(event.state, event.logical_key, &mut emulator, &program);
@@ -167,15 +190,6 @@ fn main() {
                 }
                 _ => (),
             }
-            for _ in 0..10 {
-                emulator.step();
-            }
-            if emulator.needs_redraw() {
-                window.request_redraw();
-            }
-            // // TODO: DELETE
-            // emulator.step();
-            // emulator.tick_timers();
         })
         .unwrap();
 }
