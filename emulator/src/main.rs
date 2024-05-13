@@ -7,10 +7,9 @@ use std::time::{Duration, Instant};
 use std::thread::sleep;
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent, ElementState};
-use winit::event_loop::{ControlFlow, EventLoop, EventLoopWindowTarget};
+use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
-use winit::keyboard::{Key, SmolStr};
-use winit::keyboard::NamedKey;
+use winit::keyboard::{KeyCode, PhysicalKey};
 
 const SCALE: usize = 15; // 15x scale to the display
                          // const SCALE: usize = 1; // 15x scale to the display
@@ -48,66 +47,61 @@ fn draw_screen(surface: &mut Surface<Rc<Window>, Rc<Window>>, emulator: &mut Chi
 }
 
 /// Handles a keypress, returns whether the application should exit.
-fn handle_key(state: ElementState, key: Key, emulator: &mut Chip8, rom: &Vec<u8>) -> bool {
+fn handle_key(state: ElementState, key: PhysicalKey, emulator: &mut Chip8, rom: &Vec<u8>) -> bool {
     match state {
         ElementState::Pressed => {
             match key {
-                Key::Named(named_key) => {
-                    match named_key {
-                        NamedKey::Escape => {
+                PhysicalKey::Code(keycode) => {
+                    match keycode {
+                        KeyCode::Escape => {
                             return true;
                         },
-                        NamedKey::F5 => {
+                        KeyCode::F5 => {
                             emulator.reset();
                             emulator.load(rom);
-                        }
-                        _ => {}
-                    }
-                },
-                Key::Character(character) => {
-                    match character.as_str() {
-                        "1" => emulator.press_key(0),
-                        "2" => emulator.press_key(1),
-                        "3" => emulator.press_key(2),
-                        "4" => emulator.press_key(3),
-                        "q" | "Q" => emulator.press_key(4),
-                        "w" | "W" => emulator.press_key(5),
-                        "e" | "E" => emulator.press_key(6),
-                        "r" | "R" => emulator.press_key(7),
-                        "a" | "A" => emulator.press_key(8),
-                        "s" | "S" => emulator.press_key(9),
-                        "d" | "D" => emulator.press_key(10),
-                        "f" | "F" => emulator.press_key(11),
-                        "z" | "Z" => emulator.press_key(12),
-                        "x" | "X" => emulator.press_key(13),
-                        "c" | "C" => emulator.press_key(14),
-                        "v" | "V" => emulator.press_key(15),
+                        },
+                        KeyCode::Digit1 => emulator.press_key(0x1),
+                        KeyCode::Digit2 => emulator.press_key(0x2),
+                        KeyCode::Digit3 => emulator.press_key(0x3),
+                        KeyCode::Digit4 => emulator.press_key(0xc),
+                        KeyCode::KeyQ => emulator.press_key(0x4),
+                        KeyCode::KeyW => emulator.press_key(0x5),
+                        KeyCode::KeyE => emulator.press_key(0x6),
+                        KeyCode::KeyR => emulator.press_key(0xd),
+                        KeyCode::KeyA => emulator.press_key(0x7),
+                        KeyCode::KeyS => emulator.press_key(0x8),
+                        KeyCode::KeyD => emulator.press_key(0x9),
+                        KeyCode::KeyF => emulator.press_key(0xe),
+                        KeyCode::KeyZ => emulator.press_key(0xa),
+                        KeyCode::KeyX => emulator.press_key(0x0),
+                        KeyCode::KeyC => emulator.press_key(0xb),
+                        KeyCode::KeyV => emulator.press_key(0xf),
                         _ => ()
                     }
-
                 },
-                _ => {}
+                _ => ()
             }
         },
         ElementState::Released => {
             match key {
-                Key::Character(character) => {
-                    match character.as_str() {
-                        "1" => emulator.unpress_key(0),
-                        "2" => emulator.unpress_key(1),
-                        "3" => emulator.unpress_key(2),
-                        "4" => emulator.unpress_key(3),
-                        "q" | "Q" => emulator.unpress_key(4),
-                        "w" | "W" => emulator.unpress_key(5),
-                        "e" | "E" => emulator.unpress_key(6),
-                        "r" | "R" => emulator.unpress_key(7),
-                        "a" | "A" => emulator.unpress_key(8),
-                        "s" | "S" => emulator.unpress_key(9),
-                        "d" | "D" => emulator.unpress_key(10),
-                        "f" | "F" => emulator.unpress_key(11),
-                        "z" | "Z" => emulator.unpress_key(12),
-                        "x" | "X" => emulator.unpress_key(13),
-                        "c" | "C" => emulator.unpress_key(14),
+                PhysicalKey::Code(keycode) => {
+                    match keycode {
+                        KeyCode::Digit1 => emulator.unpress_key(0x1),
+                        KeyCode::Digit2 => emulator.unpress_key(0x2),
+                        KeyCode::Digit3 => emulator.unpress_key(0x3),
+                        KeyCode::Digit4 => emulator.unpress_key(0xc),
+                        KeyCode::KeyQ => emulator.unpress_key(0x4),
+                        KeyCode::KeyW => emulator.unpress_key(0x5),
+                        KeyCode::KeyE => emulator.unpress_key(0x6),
+                        KeyCode::KeyR => emulator.unpress_key(0xd),
+                        KeyCode::KeyA => emulator.unpress_key(0x7),
+                        KeyCode::KeyS => emulator.unpress_key(0x8),
+                        KeyCode::KeyD => emulator.unpress_key(0x9),
+                        KeyCode::KeyF => emulator.unpress_key(0xe),
+                        KeyCode::KeyZ => emulator.unpress_key(0xa),
+                        KeyCode::KeyX => emulator.unpress_key(0x0),
+                        KeyCode::KeyC => emulator.unpress_key(0xb),
+                        KeyCode::KeyV => emulator.unpress_key(0xf),
                         _ => ()
                     }
                 },
@@ -115,7 +109,7 @@ fn handle_key(state: ElementState, key: Key, emulator: &mut Chip8, rom: &Vec<u8>
             }
         }
     }
-    return false;
+    false
 }
 
 fn main() {
@@ -177,7 +171,7 @@ fn main() {
                     }
                 }
                 Event::WindowEvent { window_id: _, event: WindowEvent::KeyboardInput { event, .. }} => {
-                    let should_exit = handle_key(event.state, event.logical_key, &mut emulator, &program);
+                    let should_exit = handle_key(event.state, event.physical_key, &mut emulator, &program);
                     if should_exit {
                         elwt.exit();
                     }
