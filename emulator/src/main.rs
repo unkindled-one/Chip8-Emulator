@@ -14,7 +14,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 const SCALE: usize = 15; // 15x scale to the display
                          // const SCALE: usize = 1; // 15x scale to the display
 const SCREEN_WIDTH: usize = 64;
-const SCREEN_HEIGHT: usize = 32;
+// const SCREEN_HEIGHT: usize = 32;
 const SCALED_WIDTH: usize = 64 * SCALE;
 const SCALED_HEIGHT: usize = 32 * SCALE;
 const TICKS_PER_FRAME: u8 = 10;
@@ -158,8 +158,8 @@ fn main() {
                 Event::AboutToWait => {
                     for _ in 0..TICKS_PER_FRAME {
                         emulator.step();
-                        emulator.tick_timers();
                     }
+                    emulator.tick_timers();
                     if emulator.needs_redraw() {
                         window.request_redraw();
                     }

@@ -161,12 +161,15 @@ impl Chip8 {
             },
             (0x8, reg1, reg2, 0x1) => { // 8XY1 = reg1 = reg1 | reg2
                 self.registers[reg1 as usize] |= self.registers[reg2 as usize];
+                self.registers[0xf] = 0;
             },
             (0x8, reg1, reg2, 0x2) => { // 8XY2 = reg1 = reg1 & reg2
                 self.registers[reg1 as usize] &= self.registers[reg2 as usize];
+                self.registers[0xf] = 0;
             },
             (0x8, reg1, reg2, 0x3) => { // 8XY3 = reg1 = reg1 ^ reg2
                 self.registers[reg1 as usize] ^= self.registers[reg2 as usize];
+                self.registers[0xf] = 0;
             },
             (0x8, reg1, reg2, 0x4) => { // 8XY4 = reg1 = reg1 + reg2
                 let val1 = self.registers[reg1 as usize];
@@ -193,7 +196,6 @@ impl Chip8 {
                 }
             },
             (0x8, reg1, _, 0x6) => { // 8XY6 = reg1 = reg1 >> 1, VF = reg1 & 1
-                // TODO: Add option to set reg1 to reg2
                 let value = self.registers[reg1 as usize];
                 self.registers[reg1 as usize] = value >> 1;
                 self.registers[0xf] = value & 1;
@@ -212,7 +214,6 @@ impl Chip8 {
                 }
             },
             (0x8, reg1, _, 0xe) => { // 8XYE = reg1 = reg1 << 1, VF = reg1 & (1 << 7)
-                // TODO: Add option to set reg1 to reg2
                 let value = self.registers[reg1 as usize];
                 self.registers[reg1 as usize] = value << 1;
                 self.registers[0xf] = (value & (1 << 7)) >> 7;
@@ -220,9 +221,8 @@ impl Chip8 {
             (0xa, nib1, nib2, nib3) => { //  ANNN = IndexRegister = NNN
                 self.index_register = Self::combine_nibbles(nib1, nib2, nib3);
             },
-            (0xb, nib1, nib2, nib3) => { // BNNN =  Jump to NNN + V0
-                // TODO: Add option to allow BXNN (maybe)
-                self.program_counter = Self::combine_nibbles(nib1, nib2, nib3) + self.registers[0] as u16;
+            (0xb, nib1, nib2, nib3) => { // BXNN =  Jump to XNN + vX
+                self.program_counter = Self::combine_nibbles(nib1, nib2, nib3) + self.registers[nib1 as usize] as u16;
             },
             (0xc, reg, _, _) => { // reg = rand & byte2
                 let rand_value: u8 = rand::random::<u8>();
@@ -234,19 +234,15 @@ impl Chip8 {
                 let y_pos: u8 = self.registers[reg2 as usize] % (SCREEN_HEIGHT as u8);
                 let mut flipped = false; // Check if any pixel was flipped
 
-                for row_num in 0..num_bytes {
+                'draw_loop: for row_num in 0..num_bytes {
                     let pixels = self.memory[(self.index_register + row_num as u16) as usize];
-                    // stop writing when reaching bottom of screen
-                    if y_pos >= SCREEN_HEIGHT as u8 {
-                        break;
-                    }
                     for sprite_pos in 0..8 {
                         // stop writing when reaching edge of screen
-                        if x_pos >= SCREEN_WIDTH as u8 {
-                            break;
-                        }
                         let sprite_pixel = (pixels & (0b10000000 >> sprite_pos)) != 0;
                         let index = ((x_pos + sprite_pos) as usize) + ((y_pos + row_num) as usize) * SCREEN_WIDTH;
+                        if index >= self.display.len() {
+                            break 'draw_loop;
+                        }
                         flipped |= self.display[index as usize] != sprite_pixel;
                         self.display[index as usize] ^= sprite_pixel;
                     }
@@ -290,7 +286,7 @@ impl Chip8 {
                 if !any_pressed { // loop until key is pressed
                     self.program_counter -= 2;
                 }
-           },
+            },
             (0xf, reg, 0x2, 0x9) => { // Fx29 = Sets I reg to the font in vx
                 let x = reg as usize;
                 let c = self.registers[x] as u16;
@@ -303,7 +299,6 @@ impl Chip8 {
                 self.memory[(self.index_register + 2) as usize] = num % 10;
             },
             (0xf, reg, 0x5, 0x5) => { // Fx55 = Load into memory from reg at address I
-                // TODO: Add option for older behavior potentially.
                 let i_reg_value = self.index_register as usize;
                 let x = reg as usize;
                 for i in 0..=x {
@@ -317,7 +312,6 @@ impl Chip8 {
                     self.registers[i] = self.memory[i_reg_value + i];
                 }
             }
-
             (0x0, _, _, _) => {}, // Do nothing, for compatibility.
             (_, _, _, _) => unimplemented!("ERROR: Instruction {:?} not implemented.", instruction),
         }
